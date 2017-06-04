@@ -438,6 +438,8 @@ void Menu_SetFeederSelection(menuDef_t *menu, int feeder, int index, const char 
 void Menu_SetScreenPlacement(menuDef_t *menu, screenPlacement_e hpos, screenPlacement_e vpos );
 void Display_CacheAll( void );
 
+itemDef_t *Menu_FindItemByName(menuDef_t *menu, const char *p);
+
 void *UI_Alloc( int size );
 void UI_InitMemory( void );
 qboolean UI_OutOfMemory( void );
