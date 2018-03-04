@@ -55,20 +55,22 @@ static const int numSkillLevels = ARRAY_LEN( skillLevels );
 
 
 #define UIAS_LOCAL				0
-#define UIAS_GLOBAL1			1
-#define UIAS_GLOBAL2			2
-#define UIAS_GLOBAL3			3
-#define UIAS_GLOBAL4			4
-#define UIAS_GLOBAL5			5
-#define UIAS_FAVORITES			6
+#define UIAS_GLOBAL0			1
+#define UIAS_GLOBAL1			2
+#define UIAS_GLOBAL2			3
+#define UIAS_GLOBAL3			4
+#define UIAS_GLOBAL4			5
+#define UIAS_GLOBAL5			6
+#define UIAS_FAVORITES			7
 
 static const char *netSources[] = {
 	"Local",
-	"Internet1",
-	"Internet2",
-	"Internet3",
-	"Internet4",
-	"Internet5",
+	"Internet",
+	"Master1",
+	"Master2",
+	"Master3",
+	"Master4",
+	"Master5",
 	"Favorites"
 };
 static const int numNetSources = ARRAY_LEN( netSources );
@@ -999,6 +1001,7 @@ int UI_SourceForLAN(void) {
 		default:
 		case UIAS_LOCAL:
 			return AS_LOCAL;
+		case UIAS_GLOBAL0:
 		case UIAS_GLOBAL1:
 		case UIAS_GLOBAL2:
 		case UIAS_GLOBAL3:
@@ -1774,10 +1777,10 @@ static void UI_DrawRedBlue(rectDef_t *rect, float scale, vec4_t color, int textS
 }
 
 static void UI_DrawCrosshair(rectDef_t *rect, float scale, vec4_t color) {
- 	trap_R_SetColor( color );
-	if (uiInfo.currentCrosshair < 0 || uiInfo.currentCrosshair >= NUM_CROSSHAIRS) {
-		uiInfo.currentCrosshair = 0;
+	if (!uiInfo.currentCrosshair) {
+		return;
 	}
+	trap_R_SetColor( color );
 	UI_DrawHandlePic( rect->x, rect->y - rect->h, rect->w, rect->h, uiInfo.uiDC.Assets.crosshairShader[uiInfo.currentCrosshair]);
  	trap_R_SetColor( NULL );
 }
@@ -2484,7 +2487,7 @@ static qboolean UI_NetSource_HandleKey(int flags, float *special, int key) {
 		
 			while(ui_netSource.integer >= UIAS_GLOBAL1 && ui_netSource.integer <= UIAS_GLOBAL5)
 			{
-				Com_sprintf(cvarname, sizeof(cvarname), "sv_master%d", ui_netSource.integer);
+				Com_sprintf(cvarname, sizeof(cvarname), "sv_master%d", ui_netSource.integer - UIAS_GLOBAL0);
 				trap_Cvar_VariableStringBuffer(cvarname, masterstr, sizeof(masterstr));
 				if(*masterstr)
 					break;
@@ -3260,7 +3263,6 @@ static void UI_RunMenuScript(char **args) {
 				trap_Cvar_Set("ui_cdkeyvalid", "CD Key does not appear to be valid.");
 			}
 		} else if (Q_stricmp(name, "loadArenas") == 0) {
-			UI_LoadArenas();
 			UI_MapCountByGameType(qfalse);
 			Menu_SetFeederSelection(NULL, FEEDER_ALLMAPS, 0, "createserver");
 		} else if (Q_stricmp(name, "saveControls") == 0) {
@@ -5162,6 +5164,7 @@ void _UI_Init( qboolean inGameLoad ) {
 	UI_ParseTeamInfo("teaminfo.txt");
 	UI_LoadTeams();
 	UI_ParseGameInfo("gameinfo.txt");
+	UI_LoadArenas();
 #endif
 
 	menuSet = UI_Cvar_VariableString("ui_menuFiles");
@@ -5189,7 +5192,10 @@ void _UI_Init( qboolean inGameLoad ) {
 
 	// sets defaults for ui temp cvars
 	uiInfo.effectsColor = gamecodetoui[(int)trap_Cvar_VariableValue("color1")-1];
-	uiInfo.currentCrosshair = (int)trap_Cvar_VariableValue("cg_drawCrosshair");
+	uiInfo.currentCrosshair = (int)trap_Cvar_VariableValue("cg_drawCrosshair") % NUM_CROSSHAIRS;
+	if (uiInfo.currentCrosshair < 0) {
+		uiInfo.currentCrosshair = 0;
+	}
 	trap_Cvar_Set("ui_mousePitch", (trap_Cvar_VariableValue("m_pitch") >= 0) ? "0" : "1");
 
 	uiInfo.serverStatus.currentServerCinematic = -1;
@@ -5280,7 +5286,7 @@ void _UI_SetActiveMenu( uiMenuCommand_t menu ) {
 	char buf[256];
 
 	// this should be the ONLY way the menu system is brought up
-	// enusure minumum menu data is cached
+	// ensure minimum menu data is cached
   if (Menu_Count() > 0) {
 		vec3_t v;
 		v[0] = v[1] = v[2] = 0;
@@ -5985,6 +5991,10 @@ static void UI_DoServerRefresh( void )
 		UI_BuildServerDisplayList(2);
 		// stop the refresh
 		UI_StopServerRefresh();
+	} else if ( ui_netSource.integer == UIAS_LOCAL ) {
+		// no local servers found, check again
+		trap_Cmd_ExecuteText( EXEC_NOW, "localservers\n" );
+		uiInfo.serverStatus.refreshtime = uiInfo.uiDC.realTime + 5000;
 	}
 	//
 	UI_BuildServerDisplayList(qfalse);
@@ -6004,14 +6014,14 @@ static void UI_StartServerRefresh(qboolean full, qboolean force)
 	// This function is called with force=qfalse when server browser menu opens or net source changes.
 	// Automatically update local and favorite servers.
 	// Only auto update master server list if there is no server info cache.
-	if ( !force && ( ui_netSource.integer >= UIAS_GLOBAL1 && ui_netSource.integer <= UIAS_GLOBAL5 ) ) {
+	if ( !force && ( ui_netSource.integer >= UIAS_GLOBAL0 && ui_netSource.integer <= UIAS_GLOBAL5 ) ) {
 		if ( trap_LAN_GetServerCount( UI_SourceForLAN() ) > 0 ) {
 			return; // have cached list
 		}
 	}
 
 	trap_RealTime(&q);
- 	trap_Cvar_Set( va("ui_lastServerRefresh_%i", ui_netSource.integer), va("%s-%i, %i at %i:%i", MonthAbbrev[q.tm_mon],q.tm_mday, 1900+q.tm_year,q.tm_hour,q.tm_min));
+	trap_Cvar_Set( va("ui_lastServerRefresh_%i", ui_netSource.integer), va("%s-%i, %i at %i:%02i", MonthAbbrev[q.tm_mon],q.tm_mday, 1900+q.tm_year,q.tm_hour,q.tm_min));
 
 	if (!full) {
 		UI_UpdatePendingPings();
@@ -6032,19 +6042,19 @@ static void UI_StartServerRefresh(qboolean full, qboolean force)
 	//
 	if( ui_netSource.integer == UIAS_LOCAL ) {
 		trap_Cmd_ExecuteText( EXEC_NOW, "localservers\n" );
-		uiInfo.serverStatus.refreshtime = uiInfo.uiDC.realTime + 1000;
+		uiInfo.serverStatus.refreshtime = uiInfo.uiDC.realTime + 5000;
 		return;
 	}
 
 	uiInfo.serverStatus.refreshtime = uiInfo.uiDC.realTime + 5000;
-	if( ui_netSource.integer >= UIAS_GLOBAL1 && ui_netSource.integer <= UIAS_GLOBAL5 ) {
+	if( ui_netSource.integer >= UIAS_GLOBAL0 && ui_netSource.integer <= UIAS_GLOBAL5 ) {
 
 		ptr = UI_Cvar_VariableString("debug_protocol");
 		if (strlen(ptr)) {
-			trap_Cmd_ExecuteText( EXEC_NOW, va( "globalservers %d %s full empty\n", ui_netSource.integer - UIAS_GLOBAL1, ptr ) );
+			trap_Cmd_ExecuteText( EXEC_NOW, va( "globalservers %d %s full empty\n", ui_netSource.integer - UIAS_GLOBAL0, ptr ) );
 		}
 		else {
-			trap_Cmd_ExecuteText( EXEC_NOW, va( "globalservers %d %d full empty\n", ui_netSource.integer - UIAS_GLOBAL1, (int)trap_Cvar_VariableValue( "protocol" ) ) );
+			trap_Cmd_ExecuteText( EXEC_NOW, va( "globalservers %d %d full empty\n", ui_netSource.integer - UIAS_GLOBAL0, (int)trap_Cvar_VariableValue( "protocol" ) ) );
 		}
 	}
 }

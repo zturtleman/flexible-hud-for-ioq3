@@ -744,6 +744,8 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 		//
 		else if ( !Q_stricmp( token, "animMap" ) )
 		{
+			int	totalImages = 0;
+
 			token = COM_ParseExt( text, qfalse );
 			if ( !token[0] )
 			{
@@ -778,6 +780,12 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 					}
 					stage->bundle[0].numImageAnimations++;
 				}
+				totalImages++;
+			}
+
+			if ( totalImages > MAX_IMAGE_ANIMATIONS ) {
+				ri.Printf( PRINT_WARNING, "WARNING: ignoring excess images for 'animMap' (found %d, max is %d) in shader '%s'\n",
+						totalImages, MAX_IMAGE_ANIMATIONS, shader.name );
 			}
 		}
 		else if ( !Q_stricmp( token, "videoMap" ) )
@@ -792,6 +800,8 @@ static qboolean ParseStage( shaderStage_t *stage, char **text )
 			if (stage->bundle[0].videoMapHandle != -1) {
 				stage->bundle[0].isVideoMap = qtrue;
 				stage->bundle[0].image[0] = tr.scratchImage[stage->bundle[0].videoMapHandle];
+			} else {
+				ri.Printf( PRINT_WARNING, "WARNING: could not load '%s' for 'videoMap' keyword in shader '%s'\n", token, shader.name );
 			}
 		}
 		//
@@ -2222,7 +2232,7 @@ static void CollapseStagesToLightall(shaderStage_t *diffuse,
 		defs |= LIGHTDEF_USE_LIGHT_VERTEX;
 	}
 
-	if (r_deluxeMapping->integer && tr.worldDeluxeMapping && lightmap)
+	if (r_deluxeMapping->integer && tr.worldDeluxeMapping && lightmap && shader.lightmapIndex >= 0)
 	{
 		//ri.Printf(PRINT_ALL, ", deluxemap");
 		diffuse->bundle[TB_DELUXEMAP] = lightmap->bundle[0];
@@ -2245,7 +2255,7 @@ static void CollapseStagesToLightall(shaderStage_t *diffuse,
 		{
 			char normalName[MAX_QPATH];
 			image_t *normalImg;
-			imgFlags_t normalFlags = (diffuseImg->flags & ~(IMGFLAG_GENNORMALMAP | IMGFLAG_SRGB)) | IMGFLAG_NOLIGHTSCALE;
+			imgFlags_t normalFlags = (diffuseImg->flags & ~IMGFLAG_GENNORMALMAP) | IMGFLAG_NOLIGHTSCALE;
 
 			// try a normalheight image first
 			COM_StripExtension(diffuseImg->imgName, normalName, MAX_QPATH);
@@ -2291,7 +2301,7 @@ static void CollapseStagesToLightall(shaderStage_t *diffuse,
 		{
 			char specularName[MAX_QPATH];
 			image_t *specularImg;
-			imgFlags_t specularFlags = (diffuseImg->flags & ~(IMGFLAG_GENNORMALMAP | IMGFLAG_SRGB)) | IMGFLAG_NOLIGHTSCALE;
+			imgFlags_t specularFlags = (diffuseImg->flags & ~IMGFLAG_GENNORMALMAP) | IMGFLAG_NOLIGHTSCALE;
 
 			COM_StripExtension(diffuseImg->imgName, specularName, MAX_QPATH);
 			Q_strcat(specularName, MAX_QPATH, "_s");
@@ -2411,6 +2421,8 @@ static int CollapseStagesToGLSL(void)
 
 	if (!skip)
 	{
+		qboolean usedLightmap = qfalse;
+
 		for (i = 0; i < MAX_SHADER_STAGES; i++)
 		{
 			shaderStage_t *pStage = &stages[i];
@@ -2469,7 +2481,16 @@ static int CollapseStagesToGLSL(void)
 					case ST_COLORMAP:
 						if (pStage2->bundle[0].tcGen == TCGEN_LIGHTMAP)
 						{
-							lightmap = pStage2;
+							int blendBits = pStage->stateBits & ( GLS_DSTBLEND_BITS | GLS_SRCBLEND_BITS );
+
+							// Only add lightmap to blendfunc filter stage if it's the first time lightmap is used
+							// otherwise it will cause the shader to be darkened by the lightmap multiple times.
+							if (!usedLightmap || (blendBits != (GLS_DSTBLEND_SRC_COLOR | GLS_SRCBLEND_ZERO)
+								&& blendBits != (GLS_DSTBLEND_ZERO | GLS_SRCBLEND_DST_COLOR)))
+							{
+								lightmap = pStage2;
+								usedLightmap = qtrue;
+							}
 						}
 						break;
 
@@ -2784,7 +2805,7 @@ static shader_t *GeneratePermanentShader( void ) {
 VertexLightingCollapse
 
 If vertex lighting is enabled, only render a single
-pass, trying to guess which is the correct one to best aproximate
+pass, trying to guess which is the correct one to best approximate
 what it is supposed to look like.
 =================
 */
@@ -3062,9 +3083,7 @@ static shader_t *FinishShader( void ) {
 	//
 	// look for multitexture potential
 	//
-	if ( qglActiveTextureARB ) {
-		stage = CollapseStagesToGLSL();
-	}
+	stage = CollapseStagesToGLSL();
 
 	if ( shader.lightmapIndex >= 0 && !hasLightmapStage ) {
 		if (vertexLightmap) {
@@ -3206,18 +3225,18 @@ be defined for every single image used in the game, three default
 shader behaviors can be auto-created for any image:
 
 If lightmapIndex == LIGHTMAP_NONE, then the image will have
-dynamic diffuse lighting applied to it, as apropriate for most
+dynamic diffuse lighting applied to it, as appropriate for most
 entity skin surfaces.
 
 If lightmapIndex == LIGHTMAP_2D, then the image will be used
 for 2D rendering unless an explicit shader is found
 
 If lightmapIndex == LIGHTMAP_BY_VERTEX, then the image will use
-the vertex rgba modulate values, as apropriate for misc_model
+the vertex rgba modulate values, as appropriate for misc_model
 pre-lit surfaces.
 
 Other lightmapIndex values will have a lightmap stage created
-and src*dest blending applied with the texture, as apropriate for
+and src*dest blending applied with the texture, as appropriate for
 most world construction surfaces.
 
 ===============

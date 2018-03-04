@@ -573,7 +573,7 @@ CLIENT RELIABLE COMMAND COMMUNICATION
 ======================
 CL_AddReliableCommand
 
-The given command will be transmitted to the server, and is gauranteed to
+The given command will be transmitted to the server, and is guaranteed to
 not have future usercmd_t executed before it is executed
 ======================
 */
@@ -1245,7 +1245,7 @@ void CL_ClearMemory(qboolean shutdownRef)
 	CL_ShutdownAll(shutdownRef);
 
 	// if not running a server clear the whole hunk
-	if ( !com_sv_running->integer ) {
+	if ( !com_sv_running || !com_sv_running->integer ) {
 		// clear the whole hunk
 		Hunk_Clear();
 		// clear collision map data
@@ -1539,7 +1539,7 @@ void CL_RequestMotd( void ) {
 	
 	info[0] = 0;
 
-	Com_sprintf( cls.updateChallenge, sizeof( cls.updateChallenge ), "%i", ((rand() << 16) ^ rand()) ^ Com_Milliseconds());
+	Com_sprintf( cls.updateChallenge, sizeof( cls.updateChallenge ), "%i", (int)((((unsigned int)rand() << 16) ^ (unsigned int)rand()) ^ Com_Milliseconds()));
 
 	Info_SetValueForKey( info, "challenge", cls.updateChallenge );
 	Info_SetValueForKey( info, "renderer", cls.glconfig.renderer_string );
@@ -1768,7 +1768,7 @@ void CL_Connect_f( void ) {
 		clc.state = CA_CONNECTING;
 		
 		// Set a client challenge number that ideally is mirrored back by the server.
-		clc.challenge = ((rand() << 16) ^ rand()) ^ Com_Milliseconds();
+		clc.challenge = (((unsigned int)rand() << 16) ^ (unsigned int)rand()) ^ Com_Milliseconds();
 	}
 
 	Key_SetCatcher( 0 );
@@ -1960,7 +1960,7 @@ void CL_Vid_Restart_f( void ) {
 		CL_ShutdownCGame();
 		// shutdown the renderer and clear the renderer interface
 		CL_ShutdownRef();
-		// client is no longer pure untill new checksums are sent
+		// client is no longer pure until new checksums are sent
 		CL_ResetPureClientAtServer();
 		// clear pak references
 		FS_ClearPakReferences( FS_UI_REF | FS_CGAME_REF );
@@ -1971,7 +1971,7 @@ void CL_Vid_Restart_f( void ) {
 		cls.cgameStarted = qfalse;
 		cls.soundRegistered = qfalse;
 
-		// unpause so the cgame definately gets a snapshot and renders a frame
+		// unpause so the cgame definitely gets a snapshot and renders a frame
 		Cvar_Set("cl_paused", "0");
 
 		// initialize the renderer interface
@@ -2471,7 +2471,7 @@ void CL_ServersResponsePacket( const netadr_t* from, msg_t *msg, qboolean extend
 	byte*			buffptr;
 	byte*			buffend;
 	
-	Com_Printf("CL_ServersResponsePacket\n");
+	Com_Printf("CL_ServersResponsePacket from %s\n", NET_AdrToStringwPort(*from));
 
 	if (cls.numglobalservers == -1) {
 		// state to detect lack of servers or lack of response
@@ -3207,7 +3207,7 @@ void CL_InitRef( void ) {
 	Com_Printf( "----- Initializing Renderer ----\n" );
 
 #ifdef USE_RENDERER_DLOPEN
-	cl_renderer = Cvar_Get("cl_renderer", "opengl2", CVAR_ARCHIVE | CVAR_LATCH | CVAR_PROTECTED);
+	cl_renderer = Cvar_Get("cl_renderer", "opengl2", CVAR_ARCHIVE | CVAR_LATCH);
 
 	Com_sprintf(dllName, sizeof(dllName), "renderer_%s_" ARCH_STRING DLL_EXT, cl_renderer->string);
 
@@ -3301,7 +3301,7 @@ void CL_InitRef( void ) {
 
 	re = *ret;
 
-	// unpause so the cgame definately gets a snapshot and renders a frame
+	// unpause so the cgame definitely gets a snapshot and renders a frame
 	Cvar_Set( "cl_paused", "0" );
 }
 
@@ -4165,6 +4165,10 @@ void CL_LocalServers_f( void ) {
 /*
 ==================
 CL_GlobalServers_f
+
+Originally master 0 was Internet and master 1 was MPlayer.
+ioquake3 2008; added support for requesting five separate master servers using 0-4.
+ioquake3 2017; made master 0 fetch all master servers and 1-5 request a single master server.
 ==================
 */
 void CL_GlobalServers_f( void ) {
@@ -4172,13 +4176,36 @@ void CL_GlobalServers_f( void ) {
 	int			count, i, masterNum;
 	char		command[1024], *masteraddress;
 	
-	if ((count = Cmd_Argc()) < 3 || (masterNum = atoi(Cmd_Argv(1))) < 0 || masterNum > MAX_MASTER_SERVERS - 1)
+	if ((count = Cmd_Argc()) < 3 || (masterNum = atoi(Cmd_Argv(1))) < 0 || masterNum > MAX_MASTER_SERVERS)
 	{
-		Com_Printf("usage: globalservers <master# 0-%d> <protocol> [keywords]\n", MAX_MASTER_SERVERS - 1);
+		Com_Printf("usage: globalservers <master# 0-%d> <protocol> [keywords]\n", MAX_MASTER_SERVERS);
 		return;	
 	}
 
-	sprintf(command, "sv_master%d", masterNum + 1);
+	// request from all master servers
+	if ( masterNum == 0 ) {
+		int numAddress = 0;
+
+		for ( i = 1; i <= MAX_MASTER_SERVERS; i++ ) {
+			sprintf(command, "sv_master%d", i);
+			masteraddress = Cvar_VariableString(command);
+
+			if(!*masteraddress)
+				continue;
+
+			numAddress++;
+
+			Com_sprintf(command, sizeof(command), "globalservers %d %s %s\n", i, Cmd_Argv(2), Cmd_ArgsFrom(3));
+			Cbuf_AddText(command);
+		}
+
+		if ( !numAddress ) {
+			Com_Printf( "CL_GlobalServers_f: Error: No master server addresses.\n");
+		}
+		return;
+	}
+
+	sprintf(command, "sv_master%d", masterNum);
 	masteraddress = Cvar_VariableString(command);
 	
 	if(!*masteraddress)
@@ -4200,7 +4227,7 @@ void CL_GlobalServers_f( void ) {
 	else if(i == 2)
 		to.port = BigShort(PORT_MASTER);
 
-	Com_Printf("Requesting servers from master %s...\n", masteraddress);
+	Com_Printf("Requesting servers from %s (%s)...\n", masteraddress, NET_AdrToStringwPort(to));
 
 	cls.numglobalservers = -1;
 	cls.pingUpdateSource = AS_GLOBAL;

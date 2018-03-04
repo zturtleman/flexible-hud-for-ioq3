@@ -365,8 +365,8 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 			shader = tr.defaultShader;
 			for ( j = 0 ; j < skin->numSurfaces ; j++ ) {
 				// the names have both been lowercased
-				if ( !strcmp( skin->surfaces[j]->name, surface->name ) ) {
-					shader = skin->surfaces[j]->shader;
+				if ( !strcmp( skin->surfaces[j].name, surface->name ) ) {
+					shader = skin->surfaces[j].shader;
 					break;
 				}
 			}
@@ -376,12 +376,9 @@ void R_AddMD3Surfaces( trRefEntity_t *ent ) {
 			else if (shader->defaultShader) {
 				ri.Printf( PRINT_DEVELOPER, "WARNING: shader %s in skin %s not found\n", shader->name, skin->name);
 			}
-		//} else if ( surface->numShaders <= 0 ) {
-			//shader = tr.defaultShader;
+		} else if ( surface->numShaderIndexes <= 0 ) {
+			shader = tr.defaultShader;
 		} else {
-			//md3Shader = (md3Shader_t *) ( (byte *)surface + surface->ofsShaders );
-			//md3Shader += ent->e.skinNum % surface->numShaders;
-			//shader = tr.shaders[ md3Shader->shaderIndex ];
 			shader = tr.shaders[ surface->shaderIndexes[ ent->e.skinNum % surface->numShaderIndexes ] ];
 		}
 

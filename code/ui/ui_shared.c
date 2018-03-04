@@ -20,7 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 // 
-// string allocation/managment
+// string allocation/management
 
 #include "ui_shared.h"
 
@@ -198,6 +198,9 @@ const char *String_Alloc(const char *p) {
 		}
 
 		str  = UI_Alloc(sizeof(stringDef_t));
+		if (!str) {
+			return NULL;
+		}
 		str->next = NULL;
 		str->str = &strPool[ph];
 		if (last) {
@@ -1121,10 +1124,10 @@ void Menu_TransitionItemByName(menuDef_t *menu, const char *p, rectDef_t rectFro
       item->window.offsetTime = time;
 			memcpy(&item->window.rectClient, &rectFrom, sizeof(rectDef_t));
 			memcpy(&item->window.rectEffects, &rectTo, sizeof(rectDef_t));
-			item->window.rectEffects2.x = abs(rectTo.x - rectFrom.x) / amt;
-			item->window.rectEffects2.y = abs(rectTo.y - rectFrom.y) / amt;
-			item->window.rectEffects2.w = abs(rectTo.w - rectFrom.w) / amt;
-			item->window.rectEffects2.h = abs(rectTo.h - rectFrom.h) / amt;
+			item->window.rectEffects2.x = fabs(rectTo.x - rectFrom.x) / amt;
+			item->window.rectEffects2.y = fabs(rectTo.y - rectFrom.y) / amt;
+			item->window.rectEffects2.w = fabs(rectTo.w - rectFrom.w) / amt;
+			item->window.rectEffects2.h = fabs(rectTo.h - rectFrom.h) / amt;
       Item_UpdatePosition(item);
     }
   }

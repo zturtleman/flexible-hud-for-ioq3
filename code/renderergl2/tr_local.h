@@ -471,36 +471,13 @@ typedef struct shader_s {
 
 	void		(*optimalStageIteratorFunc)( void );
 
-  float clampTime;                                  // time this shader is clamped to
-  float timeOffset;                                 // current time offset for this shader
+  double clampTime;                                  // time this shader is clamped to
+  double timeOffset;                                 // current time offset for this shader
 
   struct shader_s *remappedShader;                  // current shader this one is remapped too
 
 	struct	shader_s	*next;
 } shader_t;
-
-static ID_INLINE qboolean ShaderRequiresCPUDeforms(const shader_t * shader)
-{
-	if(shader->numDeforms)
-	{
-		const deformStage_t *ds = &shader->deforms[0];
-
-		if (shader->numDeforms > 1)
-			return qtrue;
-
-		switch (ds->deformation)
-		{
-			case DEFORM_WAVE:
-			case DEFORM_BULGE:
-				return qfalse;
-
-			default:
-				return qtrue;
-		}
-	}
-
-	return qfalse;
-}
 
 enum
 {
@@ -694,6 +671,8 @@ typedef enum
 
 	UNIFORM_CUBEMAPINFO,
 
+	UNIFORM_ALPHATEST,
+
 	UNIFORM_COUNT
 } uniform_t;
 
@@ -731,7 +710,7 @@ typedef struct {
 	byte		areamask[MAX_MAP_AREA_BYTES];
 	qboolean	areamaskModified;	// qtrue if areamask changed since last scene
 
-	float		floatTime;			// tr.refdef.time / 1000.0
+	double		floatTime;			// tr.refdef.time / 1000.0
 
 	float		blurFactor;
 
@@ -766,6 +745,12 @@ typedef struct {
 
 //=================================================================================
 
+// max surfaces per-skin
+// This is an arbitry limit. Vanilla Q3 only supported 32 surfaces in skins but failed to
+// enforce the maximum limit when reading skin files. It was possile to use more than 32
+// surfaces which accessed out of bounds memory past end of skin->surfaces hunk block.
+#define MAX_SKIN_SURFACES	256
+
 // skins allow models to be retextured without modifying the model file
 typedef struct {
 	char		name[MAX_QPATH];
@@ -775,7 +760,7 @@ typedef struct {
 typedef struct skin_s {
 	char		name[MAX_QPATH];		// game path, including extension
 	int			numSurfaces;
-	skinSurface_t	*surfaces[MD3_MAX_SURFACES];
+	skinSurface_t	*surfaces;			// dynamically allocated array of surfaces
 } skin_t;
 
 
@@ -1351,9 +1336,6 @@ typedef enum {
 // We can't change glConfig_t without breaking DLL/vms compatibility, so
 // store extensions we have here.
 typedef struct {
-	int openglMajorVersion;
-	int openglMinorVersion;
-
 	qboolean    intelGraphics;
 
 	qboolean	occlusionQuery;
@@ -1410,7 +1392,7 @@ typedef struct {
 	int		msec;			// total msec for backend run
 } backEndCounters_t;
 
-// all state modified by the back end is seperated
+// all state modified by the back end is separated
 // from the front end state
 typedef struct {
 	trRefdef_t	refdef;
@@ -1708,9 +1690,6 @@ extern	cvar_t	*r_skipBackEnd;
 
 extern	cvar_t	*r_anaglyphMode;
 
-extern  cvar_t  *r_mergeMultidraws;
-extern  cvar_t  *r_mergeLeafSurfaces;
-
 extern  cvar_t  *r_externalGLSL;
 
 extern  cvar_t  *r_hdr;
@@ -1783,6 +1762,32 @@ extern	cvar_t	*r_debugSort;
 extern	cvar_t	*r_printShaders;
 
 extern cvar_t	*r_marksOnTriangleMeshes;
+
+//====================================================================
+
+static ID_INLINE qboolean ShaderRequiresCPUDeforms(const shader_t * shader)
+{
+	if(shader->numDeforms)
+	{
+		const deformStage_t *ds = &shader->deforms[0];
+
+		if (shader->numDeforms > 1)
+			return qtrue;
+
+		switch (ds->deformation)
+		{
+			case DEFORM_WAVE:
+			case DEFORM_BULGE:
+				// need CPU deforms at high level-times to avoid floating point percision loss
+				return ( backEnd.refdef.floatTime != (float)backEnd.refdef.floatTime );
+
+			default:
+				return qtrue;
+		}
+	}
+
+	return qfalse;
+}
 
 //====================================================================
 
@@ -1973,7 +1978,7 @@ typedef struct shaderCommands_s
 	//color4ub_t	constantColor255[SHADER_MAX_VERTEXES] QALIGN(16);
 
 	shader_t	*shader;
-	float		shaderTime;
+	double		shaderTime;
 	int			fogNum;
 	int         cubemapIndex;
 

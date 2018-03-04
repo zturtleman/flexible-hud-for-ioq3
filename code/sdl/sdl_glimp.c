@@ -53,12 +53,22 @@ cvar_t *r_allowResize; // make window resizable
 cvar_t *r_centerWindow;
 cvar_t *r_sdlDriver;
 
+int qglMajorVersion, qglMinorVersion;
+int qglesMajorVersion, qglesMinorVersion;
+
 void (APIENTRYP qglActiveTextureARB) (GLenum texture);
 void (APIENTRYP qglClientActiveTextureARB) (GLenum texture);
 void (APIENTRYP qglMultiTexCoord2fARB) (GLenum target, GLfloat s, GLfloat t);
 
 void (APIENTRYP qglLockArraysEXT) (GLint first, GLsizei count);
 void (APIENTRYP qglUnlockArraysEXT) (void);
+
+#define GLE(ret, name, ...) name##proc * qgl##name;
+QGL_1_1_PROCS;
+QGL_DESKTOP_1_1_PROCS;
+QGL_ES_1_1_PROCS;
+QGL_3_0_PROCS;
+#undef GLE
 
 /*
 ===============
@@ -212,10 +222,101 @@ static void GLimp_DetectAvailableModes(void)
 
 /*
 ===============
+GLimp_GetProcAddresses
+
+Get addresses for OpenGL functions.
+===============
+*/
+static qboolean GLimp_GetProcAddresses( void ) {
+	qboolean success = qtrue;
+	const char *version;
+
+#ifdef __SDL_NOGETPROCADDR__
+#define GLE( ret, name, ... ) qgl##name = gl#name;
+#else
+#define GLE( ret, name, ... ) qgl##name = (name##proc *) SDL_GL_GetProcAddress("gl" #name); \
+	if ( qgl##name == NULL ) { \
+		ri.Printf( PRINT_ALL, "ERROR: Missing OpenGL function %s\n", "gl" #name ); \
+		success = qfalse; \
+	}
+#endif
+
+	// OpenGL 1.0 and OpenGL ES 1.0
+	GLE(const GLubyte *, GetString, GLenum name)
+
+	if ( !qglGetString ) {
+		Com_Error( ERR_FATAL, "glGetString is NULL" );
+	}
+
+	version = (const char *)qglGetString( GL_VERSION );
+
+	if ( !version ) {
+		Com_Error( ERR_FATAL, "GL_VERSION is NULL\n" );
+	}
+
+	if ( Q_stricmpn( "OpenGL ES", version, 9 ) == 0 ) {
+		char profile[6]; // ES, ES-CM, or ES-CL
+		sscanf( version, "OpenGL %5s %d.%d", profile, &qglesMajorVersion, &qglesMinorVersion );
+		// common lite profile (no floating point) is not supported
+		if ( Q_stricmp( profile, "ES-CL" ) == 0 ) {
+			qglesMajorVersion = 0;
+			qglesMinorVersion = 0;
+		}
+	} else {
+		sscanf( version, "%d.%d", &qglMajorVersion, &qglMinorVersion );
+	}
+
+	if ( QGL_VERSION_ATLEAST( 1, 1 ) ) {
+		QGL_1_1_PROCS;
+		QGL_DESKTOP_1_1_PROCS;
+	} else if ( qglesMajorVersion == 1 && qglesMinorVersion >= 1 ) {
+		// OpenGL ES 1.1 (2.0 is not backward compatible)
+		QGL_1_1_PROCS;
+		QGL_ES_1_1_PROCS;
+		// error so this doesn't segfault due to NULL desktop GL functions being used
+		Com_Error( ERR_FATAL, "Unsupported OpenGL Version: %s\n", version );
+	} else {
+		Com_Error( ERR_FATAL, "Unsupported OpenGL Version: %s\n", version );
+	}
+
+	if ( QGL_VERSION_ATLEAST( 3, 0 ) || QGLES_VERSION_ATLEAST( 3, 0 ) ) {
+		QGL_3_0_PROCS;
+	}
+
+#undef GLE
+
+	return success;
+}
+
+/*
+===============
+GLimp_ClearProcAddresses
+
+Clear addresses for OpenGL functions.
+===============
+*/
+static void GLimp_ClearProcAddresses( void ) {
+#define GLE( ret, name, ... ) qgl##name = NULL;
+
+	qglMajorVersion = 0;
+	qglMinorVersion = 0;
+	qglesMajorVersion = 0;
+	qglesMinorVersion = 0;
+
+	QGL_1_1_PROCS;
+	QGL_DESKTOP_1_1_PROCS;
+	QGL_ES_1_1_PROCS;
+	QGL_3_0_PROCS;
+
+#undef GLE
+}
+
+/*
+===============
 GLimp_SetMode
 ===============
 */
-static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
+static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder, qboolean coreContext)
 {
 	const char *glstring;
 	int perChannelColorBits;
@@ -309,6 +410,7 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
 	// Destroy existing state if it exists
 	if( SDL_glContext != NULL )
 	{
+		GLimp_ClearProcAddresses();
 		SDL_GL_DeleteContext( SDL_glContext );
 		SDL_glContext = NULL;
 	}
@@ -477,10 +579,80 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
 
 		SDL_SetWindowIcon( SDL_window, icon );
 
-		if( ( SDL_glContext = SDL_GL_CreateContext( SDL_window ) ) == NULL )
+		if (coreContext)
 		{
-			ri.Printf( PRINT_DEVELOPER, "SDL_GL_CreateContext failed: %s\n", SDL_GetError( ) );
-			continue;
+			int profileMask, majorVersion, minorVersion;
+			SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &profileMask);
+			SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &majorVersion);
+			SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minorVersion);
+
+			ri.Printf(PRINT_ALL, "Trying to get an OpenGL 3.2 core context\n");
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+			if ((SDL_glContext = SDL_GL_CreateContext(SDL_window)) == NULL)
+			{
+				ri.Printf(PRINT_ALL, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+				ri.Printf(PRINT_ALL, "Reverting to default context\n");
+
+				SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, profileMask);
+				SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, majorVersion);
+				SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minorVersion);
+			}
+			else
+			{
+				const char *renderer;
+
+				ri.Printf(PRINT_ALL, "SDL_GL_CreateContext succeeded.\n");
+
+				if ( GLimp_GetProcAddresses() )
+				{
+					renderer = (const char *)qglGetString(GL_RENDERER);
+				}
+				else
+				{
+					ri.Printf( PRINT_ALL, "GLimp_GetProcAddresses() failed for OpenGL 3.2 core context\n" );
+					renderer = NULL;
+				}
+
+				if (!renderer || (strstr(renderer, "Software Renderer") || strstr(renderer, "Software Rasterizer")))
+				{
+					if ( renderer )
+						ri.Printf(PRINT_ALL, "GL_RENDERER is %s, rejecting context\n", renderer);
+
+					GLimp_ClearProcAddresses();
+					SDL_GL_DeleteContext(SDL_glContext);
+					SDL_glContext = NULL;
+
+					SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, profileMask);
+					SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, majorVersion);
+					SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minorVersion);
+				}
+			}
+		}
+		else
+		{
+			SDL_glContext = NULL;
+		}
+
+		if ( !SDL_glContext )
+		{
+			if( ( SDL_glContext = SDL_GL_CreateContext( SDL_window ) ) == NULL )
+			{
+				ri.Printf( PRINT_DEVELOPER, "SDL_GL_CreateContext failed: %s\n", SDL_GetError( ) );
+				continue;
+			}
+
+			if ( !GLimp_GetProcAddresses() )
+			{
+				ri.Printf( PRINT_ALL, "GLimp_GetProcAddresses() failed\n" );
+				GLimp_ClearProcAddresses();
+				SDL_GL_DeleteContext( SDL_glContext );
+				SDL_glContext = NULL;
+				SDL_DestroyWindow( SDL_window );
+				SDL_window = NULL;
+				continue;
+			}
 		}
 
 		qglClearColor( 0, 0, 0, 1 );
@@ -522,7 +694,7 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
 GLimp_StartDriverAndSetMode
 ===============
 */
-static qboolean GLimp_StartDriverAndSetMode(int mode, qboolean fullscreen, qboolean noborder)
+static qboolean GLimp_StartDriverAndSetMode(int mode, qboolean fullscreen, qboolean noborder, qboolean gl3Core)
 {
 	rserr_t err;
 
@@ -549,7 +721,7 @@ static qboolean GLimp_StartDriverAndSetMode(int mode, qboolean fullscreen, qbool
 		fullscreen = qfalse;
 	}
 	
-	err = GLimp_SetMode(mode, fullscreen, noborder);
+	err = GLimp_SetMode(mode, fullscreen, noborder, gl3Core);
 
 	switch ( err )
 	{
@@ -744,7 +916,7 @@ This routine is responsible for initializing the OS specific portions
 of OpenGL
 ===============
 */
-void GLimp_Init( void )
+void GLimp_Init( qboolean coreContext)
 {
 	ri.Printf( PRINT_DEVELOPER, "Glimp_Init( )\n" );
 
@@ -764,13 +936,13 @@ void GLimp_Init( void )
 	ri.Sys_GLimpInit( );
 
 	// Create the window and set up the context
-	if(GLimp_StartDriverAndSetMode(r_mode->integer, r_fullscreen->integer, r_noborder->integer))
+	if(GLimp_StartDriverAndSetMode(r_mode->integer, r_fullscreen->integer, r_noborder->integer, coreContext))
 		goto success;
 
 	// Try again, this time in a platform specific "safe mode"
 	ri.Sys_GLimpSafeInit( );
 
-	if(GLimp_StartDriverAndSetMode(r_mode->integer, r_fullscreen->integer, qfalse))
+	if(GLimp_StartDriverAndSetMode(r_mode->integer, r_fullscreen->integer, qfalse, coreContext))
 		goto success;
 
 	// Finally, try the default screen resolution
@@ -779,7 +951,7 @@ void GLimp_Init( void )
 		ri.Printf( PRINT_ALL, "Setting r_mode %d failed, falling back on r_mode %d\n",
 				r_mode->integer, R_MODE_FALLBACK );
 
-		if(GLimp_StartDriverAndSetMode(R_MODE_FALLBACK, qfalse, qfalse))
+		if(GLimp_StartDriverAndSetMode(R_MODE_FALLBACK, qfalse, qfalse, coreContext))
 			goto success;
 	}
 
@@ -801,7 +973,37 @@ success:
 	if (*glConfig.renderer_string && glConfig.renderer_string[strlen(glConfig.renderer_string) - 1] == '\n')
 		glConfig.renderer_string[strlen(glConfig.renderer_string) - 1] = 0;
 	Q_strncpyz( glConfig.version_string, (char *) qglGetString (GL_VERSION), sizeof( glConfig.version_string ) );
-	Q_strncpyz( glConfig.extensions_string, (char *) qglGetString (GL_EXTENSIONS), sizeof( glConfig.extensions_string ) );
+
+	// manually create extension list if using OpenGL 3
+	if ( qglGetStringi )
+	{
+		int i, numExtensions, extensionLength, listLength;
+		const char *extension;
+
+		qglGetIntegerv( GL_NUM_EXTENSIONS, &numExtensions );
+		listLength = 0;
+
+		for ( i = 0; i < numExtensions; i++ )
+		{
+			extension = (char *) qglGetStringi( GL_EXTENSIONS, i );
+			extensionLength = strlen( extension );
+
+			if ( ( listLength + extensionLength + 1 ) >= sizeof( glConfig.extensions_string ) )
+				break;
+
+			if ( i > 0 ) {
+				Q_strcat( glConfig.extensions_string, sizeof( glConfig.extensions_string ), " " );
+				listLength++;
+			}
+
+			Q_strcat( glConfig.extensions_string, sizeof( glConfig.extensions_string ), extension );
+			listLength += extensionLength;
+		}
+	}
+	else
+	{
+		Q_strncpyz( glConfig.extensions_string, (char *) qglGetString (GL_EXTENSIONS), sizeof( glConfig.extensions_string ) );
+	}
 
 	// initialize extensions
 	GLimp_InitExtensions( );
