@@ -3620,14 +3620,6 @@ qboolean Item_Bind_HandleKey(itemDef_t *item, int key, qboolean down) {
 
 
 
-void AdjustFrom640(float *x, float *y, float *w, float *h) {
-	//*x = *x * DC->scale + DC->bias;
-	*x *= DC->xscale;
-	*y *= DC->yscale;
-	*w *= DC->xscale;
-	*h *= DC->yscale;
-}
-
 void Item_Model_Paint(itemDef_t *item) {
 	float x, y, w, h;
 	refdef_t refdef;
@@ -3649,7 +3641,7 @@ void Item_Model_Paint(itemDef_t *item) {
 	w = item->window.rect.w-2;
 	h = item->window.rect.h-2;
 
-	AdjustFrom640( &x, &y, &w, &h );
+	DC->adjustFrom640( &x, &y, &w, &h );
 
 	refdef.x = x;
 	refdef.y = y;
@@ -4199,6 +4191,11 @@ void Menu_SetScreenPlacement(menuDef_t *menu, screenPlacement_e hpos, screenPlac
 	if ( !menu )
 		return;
 
+	if (DC->setScreenPlacement == NULL) {
+		Com_Printf( S_COLOR_YELLOW "WARNING: Menu_SetScreenPlacement() is only supported in CGame\n" );
+		return;
+	}
+
 	menu->forceScreenPlacement = qtrue;
 	menu->screenHPos = hpos;
 	menu->screenVPos = vpos;
@@ -4337,7 +4334,7 @@ void Menu_Paint(menuDef_t *menu, qboolean forcePaint) {
 	}
 
 	if (menu->forceScreenPlacement) {
-		CG_SetScreenPlacement( menu->screenHPos, menu->screenVPos );
+		DC->setScreenPlacement( menu->screenHPos, menu->screenVPos );
 	}
 
 	// draw the background if necessary
@@ -4365,7 +4362,7 @@ void Menu_Paint(menuDef_t *menu, qboolean forcePaint) {
 	}
 
 	if (menu->forceScreenPlacement) {
-		CG_PopScreenPlacement();
+		DC->popScreenPlacement();
 	}
 }
 
@@ -5632,6 +5629,11 @@ qboolean MenuParse_screenPlacement( itemDef_t *item, int handle ) {
 	menuDef_t *menu = (menuDef_t*)item;
 	screenPlacement_e hpos, vpos;
 	pc_token_t token;
+
+	if (DC->setScreenPlacement == NULL) {
+		PC_SourceError(handle, "screenPlacement is only supported in HUDs");
+		return qfalse;
+	}
 
 	if (!trap_PC_ReadToken(handle, &token))
 		return qfalse;

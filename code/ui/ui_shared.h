@@ -105,6 +105,23 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define SLIDER_THUMB_HEIGHT 20.0
 #define	NUM_CROSSHAIRS			10
 
+// ugly workaround for having it in cg_local.h and ui_shared.h
+#ifndef HAVE_SCREEN_PLACEMENT
+#define HAVE_SCREEN_PLACEMENT
+typedef enum {
+	PLACE_STRETCH,
+	PLACE_CENTER,
+
+	// horizontal only
+	PLACE_LEFT,
+	PLACE_RIGHT,
+
+	// vertical only
+	PLACE_TOP,
+	PLACE_BOTTOM
+} screenPlacement_e;
+#endif
+
 typedef struct {
   const char *command;
   const char *args[MAX_SCRIPT_ARGS];
@@ -368,6 +385,9 @@ typedef struct {
 	void (*stopCinematic)(int handle);
 	void (*drawCinematic)(int handle, float x, float y, float w, float h);
 	void (*runCinematicFrame)(int handle);
+	void (*adjustFrom640)( float *x, float *y, float *w, float *h );
+	void (*setScreenPlacement)( screenPlacement_e hpos, screenPlacement_e vpos );
+	void (*popScreenPlacement)( void );
 
   float			yscale;
   float			xscale;
