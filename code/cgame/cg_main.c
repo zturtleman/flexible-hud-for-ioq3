@@ -1765,7 +1765,6 @@ CG_LoadHudMenu();
 void CG_LoadHudMenu( void ) {
 	char buff[1024];
 	const char *hudSet;
-	menuDef_t *menu;
 
 	cgDC.registerShaderNoMip = &trap_R_RegisterShaderNoMip;
 	cgDC.setColor = &trap_R_SetColor;
@@ -1831,6 +1830,18 @@ void CG_LoadHudMenu( void ) {
 	}
 
 	CG_LoadMenus(hudSet);
+	CG_HudMenuHacks();
+}
+
+/*
+=================
+CG_HudMenuHacks
+=================
+*/
+void CG_HudMenuHacks( void ) {
+	menuDef_t *menu;
+
+	Init_Display(&cgDC);
 
 	// make voice chat head stick to left side in widescreen
 	menu = Menus_FindByName( "voiceMenu" );
