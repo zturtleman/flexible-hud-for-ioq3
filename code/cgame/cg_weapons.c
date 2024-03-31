@@ -1459,6 +1459,11 @@ void CG_DrawWeaponSelect( void ) {
 	int		x, y, w;
 	char	*name;
 	float	*color;
+	float	markerSize, iconSize, offsetSize, charWidth, charHeight;
+
+	if ( cg_drawWeaponBar.value <= 0 ) {
+		return;
+	}
 
 	// don't display if dead
 	if ( cg.predictedPlayerState.stats[STAT_HEALTH] <= 0 ) {
@@ -1483,8 +1488,15 @@ void CG_DrawWeaponSelect( void ) {
 		}
 	}
 
-	x = 320 - count * 20;
+	x = 320 - count * 20 * cg_drawWeaponBar.value;
 	y = 380;
+
+	markerSize = 40 * cg_drawWeaponBar.value;
+	iconSize = 32 * cg_drawWeaponBar.value;
+	offsetSize = (markerSize - iconSize) * 0.5f;
+
+	charWidth = BIGCHAR_WIDTH * cg_drawWeaponBar.value;
+	charHeight = BIGCHAR_HEIGHT * cg_drawWeaponBar.value;
 
 	for ( i = 1 ; i < MAX_WEAPONS ; i++ ) {
 		if ( !( bits & ( 1 << i ) ) ) {
@@ -1494,28 +1506,28 @@ void CG_DrawWeaponSelect( void ) {
 		CG_RegisterWeapon( i );
 
 		// draw weapon icon
-		CG_DrawPic( x, y, 32, 32, cg_weapons[i].weaponIcon );
+		CG_DrawPic( x, y, iconSize, iconSize, cg_weapons[i].weaponIcon );
 
 		// draw selection marker
 		if ( i == cg.weaponSelect ) {
-			CG_DrawPic( x-4, y-4, 40, 40, cgs.media.selectShader );
+			CG_DrawPic( x-offsetSize, y-offsetSize, markerSize, markerSize, cgs.media.selectShader );
 		}
 
 		// no ammo cross on top
 		if ( !cg.snap->ps.ammo[ i ] ) {
-			CG_DrawPic( x, y, 32, 32, cgs.media.noammoShader );
+			CG_DrawPic( x, y, iconSize, iconSize, cgs.media.noammoShader );
 		}
 
-		x += 40;
+		x += markerSize;
 	}
 
 	// draw the selected name
 	if ( cg_weapons[ cg.weaponSelect ].item ) {
 		name = cg_weapons[ cg.weaponSelect ].item->pickup_name;
 		if ( name ) {
-			w = CG_DrawStrlen( name ) * BIGCHAR_WIDTH;
+			w = CG_DrawStrlen( name ) * charWidth;
 			x = ( SCREEN_WIDTH - w ) / 2;
-			CG_DrawBigStringColor(x, y - 22, name, color);
+			CG_DrawStringExt(x, y - 22*cg_drawWeaponBar.value, name, color, qfalse, qtrue, charWidth, charHeight, 0 );
 		}
 	}
 

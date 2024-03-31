@@ -108,6 +108,11 @@ vmCvar_t	cg_drawAmmoWarning;
 vmCvar_t	cg_drawCrosshair;
 vmCvar_t	cg_drawCrosshairNames;
 vmCvar_t	cg_drawRewards;
+vmCvar_t	cg_drawScores;
+vmCvar_t	cg_drawPickups;
+vmCvar_t	cg_drawWeaponBar;
+vmCvar_t	cg_drawStatusHead;
+vmCvar_t	cg_statusScale;
 vmCvar_t	cg_crosshairSize;
 vmCvar_t	cg_crosshairX;
 vmCvar_t	cg_crosshairY;
@@ -226,6 +231,11 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_drawCrosshair, "cg_drawCrosshair", "4", CVAR_ARCHIVE },
 	{ &cg_drawCrosshairNames, "cg_drawCrosshairNames", "1", CVAR_ARCHIVE },
 	{ &cg_drawRewards, "cg_drawRewards", "1", CVAR_ARCHIVE },
+	{ &cg_drawScores, "cg_drawScores", "1", CVAR_ARCHIVE },
+	{ &cg_drawPickups, "cg_drawPickups", "1", CVAR_ARCHIVE },
+	{ &cg_drawWeaponBar, "cg_drawWeaponBar", "1", CVAR_ARCHIVE },
+	{ &cg_drawStatusHead, "cg_drawStatusHead", "1", CVAR_ARCHIVE },
+	{ &cg_statusScale, "cg_statusScale", "1", CVAR_ARCHIVE },
 	{ &cg_crosshairSize, "cg_crosshairSize", "24", CVAR_ARCHIVE },
 	{ &cg_crosshairHealth, "cg_crosshairHealth", "1", CVAR_ARCHIVE },
 	{ &cg_crosshairX, "cg_crosshairX", "0", CVAR_ARCHIVE },
@@ -1016,6 +1026,9 @@ static void CG_RegisterGraphics( void ) {
 			CG_RegisterItemVisuals( i );
 		}
 	}
+
+	// can be used by HUD so always load it
+	CG_RegisterItemVisuals( 6 /* item_health_large */ );
 
 	// wall marks
 	cgs.media.bulletMarkShader = trap_R_RegisterShader( "gfx/damage/bullet_mrk" );
