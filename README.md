@@ -28,4 +28,6 @@ ZTM's Flexible HUD mod for ioquake3 is licensed under [the GNU GPLv2](COPYING.tx
 
 * Quake 3 - id Software
 * ioquake3 - ioquake3 contributors
+* 4:3 FOV value to widescreen formula - LordHavoc
+* cg_fovAspectAdjust implementation - Razor
 * ZTM's Flexible HUD mod for ioquake3 - Zack Middleton
